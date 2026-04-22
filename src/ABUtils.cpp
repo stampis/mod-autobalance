@@ -14,6 +14,41 @@
 
 #include <chrono>
 #include <sstream>
+#include <algorithm>
+#include <unordered_set>
+
+namespace
+{
+    // Prune the cached map player list so it never contains stale Player* pointers.
+    // This prevents crashes when players/bots are deleted without a matching RemovePlayerFromMap call.
+    static void PruneMapPlayerList(Map* map, AutoBalanceMapInfo* mapABInfo)
+    {
+        if (!map || !mapABInfo || mapABInfo->allMapPlayers.empty())
+            return;
+
+        std::unordered_set<Player*> livePlayers;
+
+        Map::PlayerList const& playerList = map->GetPlayers();
+        for (Map::PlayerList::const_iterator itr = playerList.begin(); itr != playerList.end(); ++itr)
+        {
+            Player* p = itr->GetSource();
+            if (p && p->IsInWorld() && !p->IsGameMaster())
+                livePlayers.insert(p);
+        }
+
+        std::vector<Player*> pruned;
+        pruned.reserve(mapABInfo->allMapPlayers.size());
+
+        // IMPORTANT: never dereference pointers from the cached list - they may be stale.
+        for (Player* p : mapABInfo->allMapPlayers)
+        {
+            if (p && livePlayers.find(p) != livePlayers.end())
+                pruned.push_back(p);
+        }
+
+        mapABInfo->allMapPlayers.swap(pruned);
+    }
+}
 
 void AddCreatureToMapCreatureList(Creature* creature, bool addToCreatureList, bool forceRecalculation)
 {
@@ -2416,6 +2451,9 @@ void UpdateMapPlayerStats(Map* map)
     // Update the player count
     // Minimum of 1 to prevent scaling weirdness when only GMs are in the instnace
     //
+
+    // Ensure cached player pointers are still valid for this map instance.
+    PruneMapPlayerList(map, mapABInfo);
 
     mapABInfo->playerCount = mapABInfo->allMapPlayers.size() ? mapABInfo->allMapPlayers.size() : 1;
 
