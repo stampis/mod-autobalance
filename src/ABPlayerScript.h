@@ -18,6 +18,7 @@ public:
     }
 
     void         OnPlayerLogin(Player* Player) override;
+    void         OnPlayerLogout(Player* player) override;
     virtual void OnPlayerLevelChanged(Player* player, uint8 oldlevel) override;
     void         OnPlayerGiveXP(Player* player, uint32& amount, Unit* victim, uint8 xpSource) override;
     void         OnPlayerBeforeLootMoney(Player* player, Loot* loot) override;

@@ -438,7 +438,7 @@ void AddCreatureToMapCreatureList(Creature* creature, bool addToCreatureList, bo
                     if (thisPlayer->IsGameMaster())
                         continue;
 
-                    if (thisPlayer->IsWithinDist(creature, 500))
+                    if (thisPlayer->IsWithinDist(creature, static_cast<float>(distance)))
                     {
                         LOG_DEBUG("module.AutoBalance", "AutoBalance::AddCreatureToMapCreatureList: Creature {} ({}) | is in range ({} world units) of player {} and is considered active.", creature->GetName(), creatureABInfo->UnmodifiedLevel, distance, thisPlayer->GetName());
                         isPlayerWithinDistance = true;
@@ -2439,6 +2439,8 @@ void UpdateMapPlayerStats(Map* map)
 
     uint8 oldPlayerCount         = mapABInfo->playerCount;
     uint8 oldAdjustedPlayerCount = mapABInfo->adjustedPlayerCount;
+    uint8 oldHighestPlayerLevel  = mapABInfo->highestPlayerLevel;
+    uint8 oldLowestPlayerLevel   = mapABInfo->lowestPlayerLevel;
 
     LOG_DEBUG("module.AutoBalance", "AutoBalance::UpdateMapPlayerStats: Map {} ({}{}) | oldPlayerCount = ({}), oldAdjustedPlayerCount = ({}).",
         instanceMap->GetMapName(),
@@ -2576,7 +2578,7 @@ void UpdateMapPlayerStats(Map* map)
     {
         Player* thisPlayer = *playerIterator;
 
-        if (thisPlayer && !thisPlayer->IsGameMaster())
+        if (thisPlayer && thisPlayer->IsInWorld() && !thisPlayer->IsGameMaster())
         {
             if (thisPlayer->GetLevel() > highestPlayerLevel || highestPlayerLevel == 0)
                 highestPlayerLevel = thisPlayer->GetLevel();
@@ -2618,6 +2620,23 @@ void UpdateMapPlayerStats(Map* map)
             mapABInfo->highestPlayerLevel,
             mapABInfo->adjustedPlayerCount);
     }
+
+    // If the player level range changed, schedule this map for a reconfiguration.
+    // This helps ensure creatures get re-scaled after long disconnects / logins where map enter hooks may not run.
+    if (oldHighestPlayerLevel != mapABInfo->highestPlayerLevel || oldLowestPlayerLevel != mapABInfo->lowestPlayerLevel)
+    {
+        mapABInfo->mapConfigTime = 1;
+
+        LOG_DEBUG("module.AutoBalance", "AutoBalance::UpdateMapPlayerStats: Map {} ({}{}) | Player level range changes ({}-{} -> {}-{}). Force map update. mapConfigTime set to ({}).",
+            instanceMap->GetMapName(),
+            instanceMap->GetId(),
+            instanceMap->GetInstanceId() ? "-" + std::to_string(instanceMap->GetInstanceId()) : "",
+            oldLowestPlayerLevel,
+            oldHighestPlayerLevel,
+            mapABInfo->lowestPlayerLevel,
+            mapABInfo->highestPlayerLevel,
+            mapABInfo->mapConfigTime);
+    }
 }
 
 void AddPlayerToMap(Map* map, Player* player)
@@ -2654,9 +2673,8 @@ void AddPlayerToMap(Map* map, Player* player)
     //
     else if (std::find(mapABInfo->allMapPlayers.begin(), mapABInfo->allMapPlayers.end(), player) != mapABInfo->allMapPlayers.end())
     {
-        LOG_DEBUG("module.AutoBalance", "AutoBalance::AddPlayerToMap: Player {} ({}) | is already in the map's player list.",
-            player->GetName(),
-            player->GetLevel());
+        LOG_DEBUG("module.AutoBalance", "AutoBalance::AddPlayerToMap: Player {} | is already in the map's player list.",
+            player->GetName());
         return;
     }
 
@@ -2665,7 +2683,7 @@ void AddPlayerToMap(Map* map, Player* player)
     //
 
     mapABInfo->allMapPlayers.push_back(player);
-    LOG_DEBUG("module.AutoBalance", "AutoBalance::AddPlayerToMap: Player {} ({}) | added to the map's player list.", player->GetName(), player->GetLevel());
+    LOG_DEBUG("module.AutoBalance", "AutoBalance::AddPlayerToMap: Player {} | added to the map's player list.", player->GetName());
 
     //
     // Update the map's player stats
@@ -2688,7 +2706,7 @@ bool RemovePlayerFromMap(Map* map, Player* player)
 
     if (std::find(mapABInfo->allMapPlayers.begin(), mapABInfo->allMapPlayers.end(), player) == mapABInfo->allMapPlayers.end())
     {
-        LOG_DEBUG("module.AutoBalance", "AutoBalance::RemovePlayerFromMap: Player {} ({}) | was not in the map's player list.", player->GetName(), player->GetLevel());
+        LOG_DEBUG("module.AutoBalance", "AutoBalance::RemovePlayerFromMap: Player {} | was not in the map's player list.", player->GetName());
         return false;
     }
 
@@ -2697,7 +2715,7 @@ bool RemovePlayerFromMap(Map* map, Player* player)
     //
 
     mapABInfo->allMapPlayers.erase(std::remove(mapABInfo->allMapPlayers.begin(), mapABInfo->allMapPlayers.end(), player), mapABInfo->allMapPlayers.end());
-    LOG_DEBUG("module.AutoBalance", "AutoBalance::RemovePlayerFromMap: Player {} ({}) | removed from the map's player list.", player->GetName(), player->GetLevel());
+    LOG_DEBUG("module.AutoBalance", "AutoBalance::RemovePlayerFromMap: Player {} | removed from the map's player list.", player->GetName());
 
     //
     // If the map is combat locked, schedule a map update for when combat ends

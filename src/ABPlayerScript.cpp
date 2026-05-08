@@ -11,21 +11,67 @@
 
 void AutoBalance_PlayerScript::OnPlayerLogin(Player* Player)
 {
+    if (!Player)
+        return;
+
     if (EnableGlobal && Announcement)
         ChatHandler(Player->GetSession()).SendSysMessage("This server is running the |cff4CFF00AutoBalance |rmodule.");
+
+    if (!EnableGlobal)
+        return;
+
+    // When a player logs back in while already inside an instance, the usual map-enter hooks
+    // may not always refresh AutoBalance state. Ensure map/player stats are up-to-date so that
+    // creatures do not remain unscaled after long disconnects or when far away from players.
+    if (!Player || Player->IsGameMaster())
+        return;
+
+    Map* map = Player->GetMap();
+    if (!map || !map->IsDungeon() || !map->GetInstanceId())
+        return;
+
+    AddPlayerToMap(map, Player);
+    UpdateMapPlayerStats(map);
+
+    AutoBalanceMapInfo* mapABInfo = GetMapInfo(map);
+    mapABInfo->mapConfigTime = 1;
+    UpdateMapDataIfNeeded(map, true);
 }
 
-void AutoBalance_PlayerScript::OnPlayerLevelChanged(Player* player, uint8 oldlevel)
+void AutoBalance_PlayerScript::OnPlayerLogout(Player* player)
 {
-    LOG_DEBUG("module.AutoBalance", "AutoBalance:: ------------------------------------------------");
+    if (!EnableGlobal)
+        return;
 
-    LOG_DEBUG("module.AutoBalance", "AutoBalance_PlayerScript::OnLevelChanged: {} has leveled ({}->{})", player->GetName(), oldlevel, player->GetLevel());
     if (!player || player->IsGameMaster())
         return;
 
     Map* map = player->GetMap();
+    if (!map || !map->IsDungeon() || !map->GetInstanceId())
+        return;
 
-    if (!map || !map->IsDungeon())
+    RemovePlayerFromMap(map, player);
+    UpdateMapPlayerStats(map);
+
+    AutoBalanceMapInfo* mapABInfo = GetMapInfo(map);
+    mapABInfo->mapConfigTime = 1;
+    UpdateMapDataIfNeeded(map, true);
+}
+
+void AutoBalance_PlayerScript::OnPlayerLevelChanged(Player* player, uint8 oldlevel)
+{
+    if (!player)
+        return;
+
+    LOG_DEBUG("module.AutoBalance", "AutoBalance:: ------------------------------------------------");
+
+    LOG_DEBUG("module.AutoBalance", "AutoBalance_PlayerScript::OnLevelChanged: {} has leveled ({}->{})", player->GetName(), oldlevel, player->GetLevel());
+    if (player->IsGameMaster())
+        return;
+
+    Map* map = player->GetMap();
+
+    if (!map || !map->IsDungeon() || !map->GetInstanceId())
         return;
 
     // update the map's player stats
@@ -33,7 +79,8 @@ void AutoBalance_PlayerScript::OnPlayerLevelChanged(Player* player, uint8 oldlev
 
     // schedule all creatures for an update
     AutoBalanceMapInfo* mapABInfo = GetMapInfo(map);
-    mapABInfo->mapConfigTime = GetCurrentConfigTime();
+    mapABInfo->mapConfigTime = 1;
+    UpdateMapDataIfNeeded(map, true);
 }
 
 void AutoBalance_PlayerScript::OnPlayerGiveXP(Player* player, uint32& amount, Unit* victim, uint8 /*xpSource*/)
