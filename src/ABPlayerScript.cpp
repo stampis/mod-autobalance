@@ -60,6 +60,9 @@ void AutoBalance_PlayerScript::OnPlayerLogout(Player* player)
 
 void AutoBalance_PlayerScript::OnPlayerLevelChanged(Player* player, uint8 oldlevel)
 {
+    if (!EnableGlobal)
+        return;
+
     if (!player)
         return;
 
@@ -85,6 +88,9 @@ void AutoBalance_PlayerScript::OnPlayerLevelChanged(Player* player, uint8 oldlev
 
 void AutoBalance_PlayerScript::OnPlayerGiveXP(Player* player, uint32& amount, Unit* victim, uint8 /*xpSource*/)
 {
+    if (!EnableGlobal || !player || !victim)
+        return;
+
     Map* map = player->GetMap();
 
     // If this isn't a dungeon, make no changes
@@ -122,10 +128,13 @@ void AutoBalance_PlayerScript::OnPlayerGiveXP(Player* player, uint32& amount, Un
 
 void AutoBalance_PlayerScript::OnPlayerBeforeLootMoney(Player* player, Loot* loot)
 {
+    if (!EnableGlobal || !player || !loot)
+        return;
+
     Map* map = player->GetMap();
 
-    // If this isn't a dungeon, make no changes
-    if (!map->IsDungeon())
+    // If this isn't a dungeon instance, make no changes
+    if (!map || !map->IsDungeon() || !map->ToInstanceMap())
         return;
 
     AutoBalanceMapInfo* mapABInfo = GetMapInfo(map);
@@ -137,6 +146,9 @@ void AutoBalance_PlayerScript::OnPlayerBeforeLootMoney(Player* player, Loot* loo
         if (sourceGuid.IsCreature())
         {
             Creature* sourceCreature = ObjectAccessor::GetCreature(*player, sourceGuid);
+            if (!sourceCreature)   // NEW
+                return;
+
             AutoBalanceCreatureInfo* creatureABInfo = sourceCreature->CustomData.GetDefault<AutoBalanceCreatureInfo>("AutoBalanceCreatureInfo");
 
             // Dynamic Mode
@@ -171,6 +183,9 @@ void AutoBalance_PlayerScript::OnPlayerBeforeLootMoney(Player* player, Loot* loo
 
 void AutoBalance_PlayerScript::OnPlayerEnterCombat(Player* player, Unit* /*enemy*/)
 {
+    if (!EnableGlobal)
+        return;
+
     // if the player or their map is gone, return
     if (!player || !player->GetMap())
         return;
@@ -207,6 +222,9 @@ void AutoBalance_PlayerScript::OnPlayerEnterCombat(Player* player, Unit* /*enemy
 
 void AutoBalance_PlayerScript::OnPlayerLeaveCombat(Player* player)
 {
+    if (!EnableGlobal)
+        return;
+
     // if the player or their map is gone, return
     if (!player || !player->GetMap())
         return;
@@ -229,10 +247,13 @@ void AutoBalance_PlayerScript::OnPlayerLeaveCombat(Player* player)
         return;
 
     // check to see if any of the other players are in combat
+    // (use the map's live player list, not the cached one, which may hold stale pointers)
     bool anyPlayersInCombat = false;
-    for (auto player : mapABInfo->allMapPlayers)
+    Map::PlayerList const& livePlayers = map->GetPlayers();
+    for (Map::PlayerList::const_iterator itr = livePlayers.begin(); itr != livePlayers.end(); ++itr)
     {
-        if (player && player->IsInCombat())
+        Player* p = itr->GetSource();
+        if (p && p->IsInWorld() && !p->IsGameMaster() && p->IsInCombat())
         {
             anyPlayersInCombat = true;
 
@@ -240,12 +261,15 @@ void AutoBalance_PlayerScript::OnPlayerLeaveCombat(Player* player)
                 map->GetMapName(),
                 map->GetId(),
                 map->GetInstanceId() ? "-" + std::to_string(map->GetInstanceId()) : "",
-                player->GetName()
+                p->GetName()
             );
 
             break;
         }
     }
+
+    if (!player->GetSession())
+        return;
 
     auto locale = player->GetSession()->GetSessionDbLocaleIndex();
 
@@ -265,10 +289,11 @@ void AutoBalance_PlayerScript::OnPlayerLeaveCombat(Player* player)
         // if the combat lock needed to be used, notify the players of it lifting
         if (mapABInfo->combatLockTripped)
         {
-            for (auto player : mapABInfo->allMapPlayers)
+            for (Map::PlayerList::const_iterator itr = livePlayers.begin(); itr != livePlayers.end(); ++itr)
             {
-                if (player && player->GetSession())
-                    ChatHandler(player->GetSession()).PSendSysMessage(ABGetLocaleText(locale, "leaving_instance_combat_change").c_str());
+                Player* p = itr->GetSource();
+                if (p && p->IsInWorld() && p->GetSession())
+                    ChatHandler(p->GetSession()).PSendSysMessage(ABGetLocaleText(locale, "leaving_instance_combat_change").c_str());
             }
         }
 

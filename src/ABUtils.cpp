@@ -389,6 +389,9 @@ void AddCreatureToMapCreatureList(Creature* creature, bool addToCreatureList, bo
         }
         else
         {
+            // NEW: make sure cached player pointers are not stale before dereferencing them
+            PruneMapPlayerList(map, mapABInfo);
+
             //
             // If the creature is friendly to a player, don't use it to update map stats
             //
@@ -1795,6 +1798,9 @@ bool isCreatureRelevant(Creature* creature)
         bool isHostileToAnyValidPlayer = false;
         TempSummon* creatureTempSummon = creature->ToTempSummon();
         Player* summonerPlayer = creatureTempSummon->GetSummoner()->ToPlayer();
+        
+        // NEW
+        PruneMapPlayerList(creatureMap, mapABInfo);
 
         for (std::vector<Player*>::const_iterator playerIterator = mapABInfo->allMapPlayers.begin(); playerIterator != mapABInfo->allMapPlayers.end(); ++playerIterator)
         {
